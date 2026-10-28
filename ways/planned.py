@@ -116,17 +116,18 @@ CONVERSATION_COPY = "CONVERSATION_COPY"
 # Part F: one fact a run needs and cannot guess, stated by a maintainer, and the switch that
 # tells a run it. FACT=<placement>; unset, the run is not told.
 #   stated     a maintainer's note right after the request, in every fill call
-#   buried     a plain line halfway through PADDING_FILES, Ledgerline's own docs, in every fill call
+#   buried     a plain line halfway through Ledgerline's own docs and code (PADDING_GLOBS), in every fill call
 #   prominent  the same docs, and the note right after the request
 #   history    an early turn of the history the fill calls see, compacted (COMPACT_AT)
 #   note       a structured note kept outside that history, shown in every call, with the same compaction
+#   padded     a control: the docs and code of `buried`, without the fact; the run is told nothing
 FACT = ("Ledgerline's maintainers label every report about the Export button feature: "
         "they plan its fixes on the feature board.")
 FACT_BY = "priya-s, a maintainer of Ledgerline"
 FACT_TOPIC = "export-button"
-FACT_PLACEMENTS = ("stated", "buried", "prominent", "history", "note")
-PADDING_FILES = ("README.md", "CHANGELOG.md", "docs/API.md", "docs/ARCHITECTURE.md", "docs/CONFIG.md",
-                 "docs/triage-runbook.md")
+FACT_PLACEMENTS = ("stated", "buried", "prominent", "history", "note", "padded")
+PADDING_GLOBS = ("*.md", "docs/*.md", "src/**/*.ts", "src/**/*.tsx")   # Ledgerline's docs and code, about 120,000 characters
+BURY_IN = "docs/ARCHITECTURE.md"   # FACT=buried: between two of its paragraphs, a doc in prose like the fact
 COMPACT_AT = 150      # tokens (characters over four) of uncompacted history: low, so every run compacts early
 KEEP = 1              # history turns kept as they were; the issue itself is never compacted (slide 32)
 
@@ -387,25 +388,34 @@ class Executor:
                 + json.dumps({"maintainer_rules": [{"stated_by": FACT_BY, "rule": FACT}]}, indent=1)]
 
     def padding(self, with_fact: bool) -> str:
-        """Ledgerline's own docs, as reference; FACT=buried puts the fact halfway through them,
+        """Ledgerline's own docs and code, as reference; FACT=buried puts the fact halfway through them,
         as a plain line with no heading to mark it."""
         repo = self.ctx.root / "fixtures" / "repo"
-        lines = []
-        for name in PADDING_FILES:
-            lines += [f"--- {name}"] + (repo / name).read_text().splitlines()
-        if with_fact:
-            lines.insert(len(lines) // 2, FACT)
+        paths = sorted({p for pattern in PADDING_GLOBS for p in repo.glob(pattern)})
+        docs = [p for p in paths if p.suffix == ".md"]
+        code = [p for p in paths if p.suffix != ".md"]
+        half = len(code) // 2
+        lines, middle = [], 0
+        for path in code[:half] + docs + code[half:]:   # the prose in the middle of the code
+            text = path.read_text().splitlines()
+            if path.relative_to(repo).as_posix() == BURY_IN:
+                middle = len(lines) + 1 + next(i for i in range(len(text) // 2, len(text)) if not text[i].strip())
+            lines += [f"--- {path.relative_to(repo).as_posix()}"] + text
+        if with_fact:   # a plain line between two paragraphs of prose, about halfway through everything
+            lines.insert(middle, FACT)
         return "Ledgerline's own files, for reference:\n\n" + "\n".join(lines)
 
     def told(self) -> list[str]:
         """Where the fact goes, right after the request, for each placement."""
-        note = f"A note from {FACT_BY}: {FACT}"
+        note = f"A triage rule stated by {FACT_BY}: {FACT}"
         if self.fact == "stated":
             return [note]
         if self.fact == "prominent":
             return [note, self.padding(with_fact=False)]
         if self.fact == "buried":
             return [self.padding(with_fact=True)]
+        if self.fact == "padded":
+            return [self.padding(with_fact=False)]
         return []
 
     # -- Part D: the store, read before the first search and written at the end ---------------------
@@ -443,7 +453,7 @@ class Executor:
                             f"label: {label}, file: {file or 'none'}" + ("" if how == "none" else f" ({how}).")}
         last = self.store.find(REPOSITORY, issue=issue, topic=f"triage:{issue}")
         written = [self.store.supersede(last[-1]["id"], decision) if last else self.store.write(decision)]
-        if self.fact and not self.store.find(REPOSITORY, source="user", topic=FACT_TOPIC, text=FACT):
+        if self.fact not in (None, "padded") and not self.store.find(REPOSITORY, source="user", topic=FACT_TOPIC, text=FACT):
             written.append(self.store.write({
                 "repository": REPOSITORY, "issue": None, "kind": "procedural", "text": FACT, "source": "user",
                 "written_at": now(), "origin": "ingested", "confirmed": True, "topic": FACT_TOPIC,

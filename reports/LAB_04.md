@@ -371,15 +371,120 @@ way of knowing that.
 
 ## Part F · Find the boundary that lost it
 
-The fact, word for word, and what the comment states when a run uses it:
+### The fact and its effect
 
-| Case | The lost run | Where it lost the fact (trace and request record) | The fix | The fixed run |
+The fact is this text, word for word: "Ledgerline's maintainers label every report about
+the Export button feature: they plan its fixes on the feature board."
+
+- A maintainer, priya-s, states the fact.
+- The fact applies to issue 4192, "Export button stays greyed out after a failed export".
+- By the general definitions, issue 4192 is a bug.
+- When a run uses the fact, the comment states `label: feature`. The file does not
+  change. It is `src/components/ExportButton.tsx`.
+
+### How I read the runs
+
+- All runs are runs of the planned way on issue 4192.
+- The switch `FACT=<placement>` in `ways/planned.py` tells a run the fact. The
+  placements are in `FACT_PLACEMENTS`.
+- The attention runs and the compaction runs use `EMPTY_STORE=1`.
+- The request record, `runs/<run_id>.requests.jsonl`, shows what each call got. I read
+  it as the checker does. A call got the fact when the squeezed fact is in the
+  `request_text` of the line for that call.
+- The drafting call is the last `execute` call before the `tool_call` of the comment.
+- A lost run is a run whose comment does not state the effect. A fixed run is a run
+  whose comment states the effect.
+
+### The three cases
+
+| Case | The lost run | Where the run lost the fact | The fix | The fixed run |
 |---|---|---|---|---|
-| Attention | | | | |
-| Compaction | | | | |
-| The session | | | | |
+| Attention | `planned-4192-s01-dd2a41`. `FACT=buried`: the fact is a plain line in the middle of the docs and the code of Ledgerline, approximately 113,000 characters. The comment states `label: bug`. | The drafting call (trace line 14, request 4) got the fact. The fact was 55,794 characters from the nearer end of 112,770 characters. All fill calls (requests 2 to 5) got the fact. The fact was in the window, and the model did not use it. | A shorter context. The same plain line is in the middle of the docs only, approximately 20,000 characters. | `planned-4192-s01-c72058`. The drafting call (trace line 29, request 9) got the fact. The fact was 8,741 characters from the nearer end of 20,193 characters. The comment states `label: feature`. |
+| Compaction | `planned-4192-s01-a658b8`. `FACT=history`: the fact is the first turn of the history that the fill calls get. The run compacts that history at 150 tokens (`COMPACT_AT`). The run keeps the issue out of the compaction. The comment states `label: bug`. | Requests 3 and 5 (fill calls) and request 7 (the summary call) got the fact. The `compaction` line at trace line 23 (676 tokens, 2 turns) replaced the fact with "code_search: CHANGELOG.md, README.md, docs/API.md". Requests 8 to 11 did not get the fact. The drafting call (trace line 29, request 10) is one of them. | A structured note outside the history (`FACT=note`, `fact_note()`). All calls get the note. The compaction is the same. A bigger window is not the fix. | `planned-4192-s01-e27362`. The `compaction` lines are at trace lines 21 and 26. Both are before the drafting call (trace line 27, request 9). The drafting call got the fact in the note, 7 characters from the end. The comment states `label: feature`. |
+| The session | `planned-4192-s01-a2c12c`. The store is empty (`EMPTY_STORE=1`). Nobody tells the run the fact. The comment states `label: bug`. | No call (requests 1 to 9) got the fact. The `store_read` line (trace line 5) returned `[]`. The stated run told RepoMind the rule. Nothing carried the rule to this run. | A store. The store keeps the rule word for word, with `source: user` and `stated_by: priya-s, a maintainer of Ledgerline`. This is the write policy of Part D. | `planned-4192-s01-ba7b54`. The run uses the real store. Nobody tells the run the fact. The `store_read` line (trace line 5) is before the first search. It returned `[1, 10, 14, 15]`. Record #15 is the rule, word for word, from `user`. Record #14 is the triage of the stated run, "label: feature". The drafting call (trace line 14, request 4) got the fact in the memory block. The comment states `label: feature`. |
 
-The session case's stated run:
+### The stated run of the session case
+
+The stated run is `planned-4192-s01-431ac2` (`FACT=stated`, real store).
+
+- All fill calls got the fact immediately after the request.
+- The comment states `label: feature`.
+- At the end, the run wrote two records: #14 (its decision) and #15 (the rule).
+- The stated run started before the lost run and before the fixed run.
+
+### Which record the fixed run used
+
+The fixed run of the session case got two records. Each record gives `feature`:
+
+- #15, the rule;
+- #14, the decision of the stated run.
+
+The request record shows that the drafting call got both records. Thus, the request
+record cannot show which record the model used. Record #15 holds the fact.
+`prompts/memory.md` tells the model to obey a `user` rule. It tells the model to examine
+a `memory` decision before it uses it.
+
+### The fourth boundary: a restart
+
+Part B tests a restart. The fix is the checkpoint. In the four cases that killed a write
+(steps 4 and 5), the checkpoint kept the arguments of that write after `kill -9`. In all
+ten cases, the run finished with one comment.
+
+### What the attention case measured
+
+The result of the attention case is not clean. This table shows all the attention runs:
+
+| Prompt | Run | Placement | Context | Comment |
+|---|---|---|---|---|
+| `executor.md` has no rule line | `c72058` | in the middle of the docs | 20,000 characters | **feature** (the fixed run) |
+| | `dd2a41` | in the middle of the docs and the code | 113,000 characters | **bug** (the lost run) |
+| | `c0af62` | immediately after the request, with the same docs and code | 113,000 characters | bug |
+| | `613506` | immediately after the request, no docs or code | 5,000 characters | bug |
+| The rule line: obey a maintainer's rule "when you are shown one" | `2a5c6c` | immediately after the request | 6,000 characters | feature |
+| | `f54cae`, `6fbf6e`, `76bd71` | in the middle of the docs and the code | 113,000 characters | feature, 3 of 3 |
+| | `c1de47` | immediately after the request | 113,000 characters | feature |
+| The rule line applies only to rules "shown as a maintainer's rule or note" (the prompt now) | `9d4a41` | in the middle of the code | 113,000 characters | feature |
+| | `020ff5` | in prose, between two paragraphs of `docs/ARCHITECTURE.md` | 113,000 characters | feature |
+| | `df2fae` | immediately after the request | 113,000 characters | feature |
+| | `49debb`, `ec3ca1` | in the middle, and immediately after the request. The fact has different words, with no words from the issue. | 113,000 characters | feature, feature |
+| | `f10103` | **control:** the same docs and code, with no fact | 113,000 characters | bug |
+
+The lost run and the fixed run that I report are different in one thing only: the
+quantity of text around the fact. The prompt is the same. The fact is the same. The fact
+is a plain line in the middle in both runs. The text is 20,000 characters in one run and
+113,000 characters in the other. The pair passes the test of the checker.
+
+But, with that first prompt, the model also did not use the fact in two other runs:
+
+- In `c0af62`, the fact was immediately after the request.
+- In `613506`, the context was only 5,000 characters.
+
+Thus, with that prompt, attention was not the stronger cause. The model did not use the
+fact in any position. Slide 22 calls this a reasoning failure: the model finds the item,
+and it does not use the item.
+
+Then I added a line to `prompts/executor.md`. The line tells the model that a rule from a
+maintainer decides the label. After this change, gpt-4.1-mini used the fact in all six
+runs with the fact in the middle:
+
+- The context was 113,000 characters.
+- The fact was in code or in prose.
+- In one run, the fact had no words from the issue.
+
+The control run had the same docs and code, but no fact. Its comment states `bug`. Thus,
+the fact caused `feature`.
+
+My conclusion: with this model and this quantity of text, the model did not lose the fact
+to attention. The prompt decided whether the model used the fact. The prompt must tell the
+model what to do with the fact.
+
+This agrees with slide 34. When an agent forgets, first find what the call got. In these
+runs, all calls got the fact. Thus, a bigger window does not help, and a store does not
+help. The fix is in the context: what the context tells the model about the fact, and how
+much other text is around the fact.
+
+The compaction case and the session case use the second rule line, the prompt now. The
+lost run and the fixed run of each case use the same prompt.
 
 ## AI assistance
 
