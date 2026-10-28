@@ -98,6 +98,13 @@ def role(name: str | None) -> str | None:
     return next((r for r in ("read_issue", "search", "read_file", "comment", "open_pr") if tool_for(r) == name), None)
 
 
+def unfilled(value) -> bool:
+    """An argument still to fill in: "$fill", "$fill: a note", or a template that holds a
+    "$fill" anywhere, such as "label: $fill\nfile: $fill", which a planner may write.
+    Only a leading "$fill" counted before, so a template went out as it was written."""
+    return FILL in str(value)
+
+
 def allows_null(spec: dict) -> bool:
     """Whether a property's schema takes null: "type": [..., "null"], or a null branch."""
     kind = spec.get("type")
@@ -229,7 +236,7 @@ class Executor:
         return result
 
     def filled(self, step: dict, args: dict) -> dict | None:
-        to_fill = [k for k, v in args.items() if str(v).startswith(FILL)]   # "$fill", or "$fill: a note"
+        to_fill = [k for k, v in args.items() if unfilled(v)]   # "$fill", "$fill: a note", or a template holding one
         if not to_fill:
             return args
         filled = self.fill(step, args, to_fill)
@@ -247,7 +254,7 @@ class Executor:
         schema = next((t for t in self.ctx.tools.schemas if t["name"] == step["tool"]), None)
         if schema is None:
             return None
-        fixed = {k: v for k, v in args.items() if not str(v).startswith(FILL)}
+        fixed = {k: v for k, v in args.items() if not unfilled(v)}
         props = (schema.get("input_schema") or {}).get("properties") or {}
         nullable = {k for k, s in props.items() if isinstance(s, dict) and allows_null(s)}
         for _ in range(MAX_FILL_TRIES):
@@ -260,7 +267,7 @@ class Executor:
                     self.refuse(step, call)       # the boundary: never run, always traced
                     continue
                 filled = {**{k: v for k, v in call.input.items() if k in props}, **fixed}   # the plan's values win
-                if any(k not in filled or filled[k] == "" or str(filled[k]).startswith(FILL)
+                if any(k not in filled or filled[k] == "" or unfilled(filled[k])
                        or (filled[k] is None and k not in nullable)
                        for k in keys):
                     continue
