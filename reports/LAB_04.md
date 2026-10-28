@@ -52,11 +52,33 @@ the PR its branch, when the registry checks the tracker before it tries again.
 
 ## Part B · Kill it at every step
 
-**The hand walk, written before the matrix.** The crash you expect to be worst:
+**The hand walk, written before the matrix.**
 
-- Its last checkpoint:
-- The steps between it and the crash, and the step running at the crash:
-- For each: its side effect, and what closes it (a key, a recorded result, or nothing):
+I wrote this out before any model run crashed and committed it before running the matrix, so the Git history shows the order. The plan is: read the issue, search, read a file, open the PR, and post the comment. I checkpoint after steps 1, 2, and 3, then sync right before steps 4 and 5.
+
+The crash I expect to be the worst is **`--die-during-step 5`**. The tracker commits the comment, but the process dies before it gets the acknowledgement. So the comment is public, the process never finds out it was posted, and the call record has no entry for it.
+
+- **Last checkpoint:** The sync checkpoint immediately before step 5, saved after the PR was returned. In it, steps 1–4 are marked `done` and step 5 is `running`. `completed_calls` contains the four calls from steps 1–4, including the PR key. `findings` has the label, file, and the exact arguments for the comment. `current_step` is 5.
+
+- **What happens between the checkpoint and the crash:** Nothing else happens in between, since the checkpoint is right before the write. Step 5, posting the comment, is the step running when the crash happens. This is the tricky case: the comment was posted, but the process doesn't know that.
+
+- **What each step does on replay, and what prevents duplicates:**
+  - Steps 1–4 are already `done` in the checkpoint. On resume, the run skips them and reuses their recorded results, so their side effects aren't repeated. The recorded result is enough to close those steps. In particular, the PR isn't opened again because its call is already in `completed_calls`.
+  - Step 5 has a side effect: a public comment. It has already happened once, even though the process didn't get the acknowledgement. On resume, the system uses the **saved arguments**, not a newly generated comment. The key is derived from `hash(run_id, plan step 5, arguments)`, so it stays the same. Before trying the write, the registry checks the tracker for a comment with that key. It finds the one that's already been committed and returns it as "already there," without posting another comment. **The key is the only thing that closes this gap.** Nothing else in the code checks whether the comment already exists. The checkpoint matters because it preserves the arguments, which keeps the key the same.
+
+I think this is the worst case because the write definitely reached the tracker, the process definitely didn't get confirmation, and only one mechanism prevents the replay from posting a second public comment. With random keys in Part C, I expect this exact case—and `--die-after-step 5`—to leave two comments.
+
+### Predictions for the other cases (derived keys)
+
+| Case | Last checkpoint | Replay window; last running step | Side effects in the window, and what prevents duplicates | Prediction |
+|---|---|---|---|---|
+| After 1, during 1 | None | The whole run, starting from the plan | No side effects have happened yet. The run starts over with the same `run_id` and replans. | 1 comment, 1 PR (if a file), matches |
+| After 2, during 2 | After step 1 | Step 2 (search) | Search is a read, so there's no side effect. The fill call runs again and may choose a different query. | 1 comment, ≤1 PR, matches |
+| After 3, during 3 | After step 2 | Step 3 (file read) | File read is a read, so there's no side effect. The fill call may choose a different path, which could change the triage from the original run, but it should still match its own findings. | 1 comment, ≤1 PR, matches |
+| After 4, during 4 | Sync, immediately before step 4 | Step 4 (PR), which committed | The PR already exists. Replay uses the saved arguments, so the key is the same. The registry checks the branch first and finds the open PR from `repomind/issue-4201`; the branch check and key prevent another PR from being created. | 1 comment, 1 PR, matches |
+| After 5, during 5 | Sync, immediately before step 5 | Step 5 (comment), which committed | The comment already exists. The registry finds it by key and returns it without writing again. | 1 comment, 1 PR, matches |
+
+I don't expect any crash to repeat a tool call that happened before the last checkpoint. After resuming, the trace should pick up at the step after the last checkpoint: step 2 for a step-2 crash, step 3 for step 3, step 4 for step 4, and step 5 for step 5.
 
 **The matrix, derived keys.** Uncrashed run:
 
