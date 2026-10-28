@@ -488,4 +488,10 @@ lost run and the fixed run of each case use the same prompt.
 
 ## AI assistance
 
-Which tool, what it wrote, and what you checked.
+**AI Tool Used:** Claude Code
+
+I used Claude Code to help implement and debug the checkpointing, resume, and store read/write in `state/checkpointer.py`, `state/store.py`, and `ways/planned.py`. I also used it to help develop the write policy, refine the prompts I had written, and run the crash matrices and other experiments.
+
+For the written deliverables, I wrote the initial drafts of the report sections myself, as well as `CHANGES.md` and `ARCHITECTURE.md`. I then used Claude Code to review them for grammar, clarity, and logical consistency. I reviewed its edits and corrected the factual errors it had added during the review.
+
+Finally, I reviewed the numbers in this report against the tracker, the traces, and the request records. I also asked Claude Code to review these as a second check before I submitted the final report.
