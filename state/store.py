@@ -51,7 +51,7 @@ KINDS = ("episodic", "semantic", "procedural")
 ORIGINS = ("derived", "ingested")
 SOURCE = re.compile(r"^(user|repo|memory|issue:\d+)$")
 EPISODIC_DAYS = 90    # an episode not written or used in this long goes inactive when a read finds it
-MAX_ACTIVE = 200      # active records per repository; past it, the least recently used go inactive
+MAX_ACTIVE = 1000     # active records per repository; past it, the least recently used go inactive
 
 COLUMNS = ("id", "repository", "issue", "kind", "text", "source", "written_at", "origin", "confirmed", "active",
            "supersedes", "stated_by", "topic", "used_at", "expired")

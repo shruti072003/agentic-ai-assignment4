@@ -204,18 +204,30 @@
   },
   "reopened": {
     "with_store": {
-      "runs": 0,
-      "passes": 0,
-      "mean_tool_calls": null,
-      "mean_tokens": null,
-      "run_ids": []
+      "runs": 5,
+      "passes": 5,
+      "mean_tool_calls": 6.2,
+      "mean_tokens": 17123.4,
+      "run_ids": [
+        "planned-4207-s01-e9fc56",
+        "planned-4207-s02-c362e2",
+        "planned-4207-s03-a806e9",
+        "planned-4207-s04-7d38f3",
+        "planned-4207-s05-a9c19f"
+      ]
     },
     "empty_store": {
-      "runs": 0,
-      "passes": 0,
-      "mean_tool_calls": null,
-      "mean_tokens": null,
-      "run_ids": []
+      "runs": 5,
+      "passes": 1,
+      "mean_tool_calls": 6.2,
+      "mean_tokens": 14130.4,
+      "run_ids": [
+        "planned-4207-s01-7e1f3a",
+        "planned-4207-s02-64a4e0",
+        "planned-4207-s03-b217a3",
+        "planned-4207-s04-078d49",
+        "planned-4207-s05-ff0928"
+      ]
     }
   },
   "checkpoint_bytes": {

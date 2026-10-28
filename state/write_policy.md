@@ -105,8 +105,11 @@ A store that never removes anything grows until retrieval fills with near-matche
 - **Expiry on access.** An episodic record that has not been written or used for **90
   days** goes inactive the next time a read finds it, so a run is never shown a
   months-old episode as current. Retrieval marks what it returns as used.
-- **A size cap.** At most **200** active records per repository, other than a person's
-  stated rules. Past it, the least recently used go inactive first.
+- **A size cap.** At most **1,000** active records per repository, other than a person's
+  stated rules. Past it, the least recently used go inactive first. The cap is set so
+  that the 90-day expiry, not the cap, is what ends an issue's decision at RepoMind's
+  write rate (`reports/LAB_04.md`, Part D). An issue reopened within 90 days, as 4207
+  was after 54, still finds its last decision.
 - A record a person with standing stated never expires. It is only ever superseded,
   because only that person, or another with standing, can change it.
 

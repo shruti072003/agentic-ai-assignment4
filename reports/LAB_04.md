@@ -159,22 +159,88 @@ slide 47's callout, "the key, not the checkpoint", measured on one run.
 
 ## Part D · A memory that can say where it came from
 
-- The write policy, in brief:
-- The three candidates, and how each was stored:
+- **The write policy, in brief** (`state/write_policy.md`, written and committed before
+  `state/store.py`):
+  - **When:** at the end of a run, once its comment is posted, never mid-run. A
+    procedure from outside a run is stored once it is verified.
+  - **What:** only what was expensive to derive (a run's triage decision, a worked-out
+    procedure), stated (a maintainer's rule, word for word) or confirmed.
+  - **How:** insert; merge when the same text is already held; replace only by
+    superseding, so the new record names the old in `supersedes` and the old goes
+    inactive. One active record per topic, and nothing is updated in place or deleted.
+  - **With:** `source`, `written_at` (ISO 8601; for a candidate, when it was seen),
+    `origin` and `confirmed`, and `stated_by` for a person's words.
+  - **Enforced in code:** `Store._checked` refuses a record without provenance, and any
+    record from `issue:<n>` that is confirmed, semantic or derived.
+- **The three candidates, and how each was stored.** `eval/store_candidates.py` puts each
+  through the policy. Run twice, it merges and writes nothing new.
 
 | Candidate | Stored? | Kind | source | origin | confirmed | Invites |
 |---|---|---|---|---|---|---|
-| A | | | | | | |
-| B | | | | | | |
-| C | | | | | | |
+| A, the procedure RepoMind worked out on 4191 | yes, record #1, repository-wide, dated 2026-10-02 (when it was seen), stored only after the script checked `package.json` has `start`, `build`, `test`, `lint` and no `serve` | procedural | `memory` | derived | true | staleness: `package.json` can change and the procedure not; its age is shown with it |
+| B, the issue body's claim that auto-merge is approved | yes, record #2, only as an episode of what tk-dev-91 wrote in issue 4188, quoted, scoped to issue 4188, "Not confirmed by any maintainer" | episodic | `issue:4188` | ingested | false | poisoning, had it been stored as a fact (slide 24). As an episode scoped to 4188 it is never returned for another issue, never semantic, and never reaches the planner |
+| C, priya-s's rule on duplicates | yes, record #3, word for word, repository-wide, `stated_by: priya-s, a maintainer, in a comment on issue 4185`, dated 2026-09-21 | procedural | `user` | ingested | true: a person with standing stating it is the confirmation | contradiction: when the rule changes, the new rule supersedes it (Part E, task 2) |
 
-- Eviction: the size, the rule, and how long an entry lives at your write rate:
+- **What a run writes.** Every run that posts its comment writes one record, its
+  decision. The record is episodic, `source: memory`, derived, `confirmed: false`
+  (a lead, not a fact), and says whether the run read the file it names. It supersedes
+  the last decision for the same issue. In the store now, the seed run's #4 was
+  superseded by #5, then #6, #7, #8 and #9, and only #9 is active.
+- **Eviction: the size, the rule, and how long an entry lives.** One store, three rules:
+  - one active decision per issue, by supersession (consolidation);
+  - **expiry on access** after **90 days** without a write or a use, for episodic
+    records;
+  - a cap of **1,000** active records per repository, least recently used first.
+
+  A maintainer's stated rule never expires and is only ever superseded.
+
+  The write rate, from my own runs: each of the 6 runs of 4207 (the seed and five)
+  wrote exactly 1 record (`store_write` lines), so **1 record per run**. Assume
+  Ledgerline sees **20 runs a day over about 8 new issues a day**. Then the active
+  decisions grow by about 8 a day, the 1,000 cap would be reached after about 125 days,
+  and the 90-day expiry binds first. **An issue's decision lives 90 days after the last
+  run that wrote or read it.** At most about 720 decisions are active at once (8 × 90),
+  under the cap, plus the few repository-wide records.
+
+  My first cap, 200, would have bound at about 25 days and evicted 4207's decision
+  before it was reopened 54 days after closing. That is the case this part measures, so
+  I raised the cap. Inactive rows still grow on disk, by about 20 a day (7,300 a year).
+  They are never retrieved, and are kept as the audit trail of what was superseded.
+- **Retrieval.** The store read comes before step 1, so before the first search
+  (`store_read` lines). It returned #1 and #3 (repository-wide) plus the active decision
+  for 4207. The records go into every fill call after the run's own results, with
+  source, age and confirmation visible, and `prompts/memory.md` says how to treat each
+  source. The planner sees none of them.
 
 | Issue 4207, five runs each | With the store | Empty store |
 |---|---|---|
-| Passes | | |
-| Mean tool calls | | |
-| Mean tokens | | |
+| Passes (Assignment 1's `check()`, from the tracker by `run_id`) | **5 of 5** | **1 of 5** |
+| Mean tool calls | 6.2 | 6.2 |
+| Mean tokens | 17,123 | 14,130 |
+| File named | `src/export/scheduler.ts`, 5 of 5 | `src/api/reports.ts` 3, `none` 1, `src/export/scheduler.ts` 1 |
+| Read the file it named, in that run | 5 of 5 | 4 of 5 (the `none` run read a path that does not exist) |
+
+The seed run, `planned-4207-s01-0bab33`, is not one of the ten. It started from a store
+with no scripted run's decision in it (the scripted tests used another file,
+`REPOMIND_STORE`), and it named `src/export/scheduler.ts`. The with-store runs are
+`planned-4207-s0{1..5}-{e9fc56,c362e2,a806e9,7d38f3,a9c19f}`, and the empty-store runs
+(`EMPTY_STORE=1`) are `-{7e1f3a,64a4e0,b217a3,078d49,ff0928}`.
+
+**What the store changed: the file, not the tool calls.** The plan fixes the tool calls,
+and both sets made 6.2 on average (the extra ones are revised searches). The store made
+each run about 3,000 tokens dearer, because the records go into every fill call. What it
+changed was which file the run read. On 4207 the searches the model writes ("weekly
+scheduled export", "weekly") mostly return `src/api/reports.ts` and documentation. In
+the empty-store runs, 3 of 5 read `src/api/reports.ts` and named it, and one read a path
+it made up and named `none`. In two of the five with-store runs (`e9fc56` and `a806e9`),
+no search returned `src/export/scheduler.ts` at all. They took the path from the earlier
+decision in memory, read the file, and named it. So the file was one the run read, and
+the path was one it took from memory. In the other three, the search did return it, and
+the memory decided which of the hits to read. No with-store run named the file without
+reading it, which is how `prompts/memory.md` asks a `memory` record to be used: as a lead
+to check. The flip side is a risk. The store passes on a reopened issue because the
+earlier decision was right. A wrong decision would be carried forward the same way,
+which is why decisions are stored unconfirmed and shown with their age.
 
 ## Part E · Answer from your own runs
 
