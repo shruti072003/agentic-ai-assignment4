@@ -1,0 +1,14 @@
+{
+ "about": "What this run has done so far: the ids of the plan steps it has run, and every file a search returned or it read, in the order it saw them. A record of the past, not a to-do list.",
+ "steps_done": [
+  1,
+  2,
+  3,
+  4,
+  5
+ ],
+ "paths": [
+  "src/ingest/dedupe.ts"
+ ],
+ "plan_version": 1
+}
