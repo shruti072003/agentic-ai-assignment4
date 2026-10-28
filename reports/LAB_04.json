@@ -231,11 +231,13 @@
     }
   },
   "checkpoint_bytes": {
-    "structured": null,
-    "with_conversation": null,
-    "runs": 0
+    "structured": 24204,
+    "with_conversation": 151683,
+    "runs": 3
   },
-  "contradiction_test": [],
+  "contradiction_test": [
+    10
+  ],
   "forgetting": {
     "attention": {
       "fact": null,

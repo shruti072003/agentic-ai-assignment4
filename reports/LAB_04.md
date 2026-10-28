@@ -244,11 +244,130 @@ which is why decisions are stored unconfirmed and shown with their age.
 
 ## Part E · Answer from your own runs
 
-1. Your prediction against the matrix:
-2. The contradiction test, and the record IDs the third session retrieved:
-3. What your checkpoint cost, structured and with the conversation, and over how many runs:
-4. Is what you built durable execution?
-5. Which abstraction?
+**1. My prediction against the matrix.** I got the counts right. With derived keys, every
+case ended with one comment and one PR. With random keys, only the two N = 5 cases posted
+the comment twice, which is what I predicted. My hand walk was still wrong in a few
+places, or was measuring the wrong thing:
+
+- **I assumed step numbers stay fixed.** In the first `during 5` run
+  (`planned-4201-s01-a10b62`), two revisions added a search step, so step 5 in that run
+  was actually the PR and not the comment. That run never tested the case I thought was
+  the worst one, and I had to run it again. A crash matrix indexed by step number ends up
+  testing whatever happens to be at that step in that run's plan.
+- **I counted "matches its findings" as a success.** In the first matrix, 7 of the 11
+  runs posted `label: $fill / file: $fill`, and all of them still "matched" because each
+  was compared against its own checkpointed findings. The key kept the comment to one,
+  but it would have done that just as well for a wrong comment as for a right one. Being
+  crash safe doesn't tell you whether the output is correct.
+- **I expected a crash in step 2 or 3 might change the triage,** because the replayed
+  fill call could pick a different query or path. That didn't happen. In all ten cases
+  the resumed run reached the same triage as the uncrashed one (bug,
+  `src/notifications/templates.ts`). The window was there (each of those resumes repeated
+  one or two fill calls), but it didn't change anything this time.
+- **What I did get right, and the trace backs it up:** for steps 4 and 5, the resumed
+  half made zero model calls, it replayed the running write from the checkpoint's arguments and went on from there. For the PR, the branch check caught it (`already there`) before the key ever got to the tracker, as I said in the hand walk.
+
+**2. The contradiction test, and the record IDs the third session retrieved: `[10]`.**
+I ran this as three separate sessions. Each one was its own process that opened the
+store, did one thing, and exited:
+
+1. `python eval/store_candidates.py` (from Part D) stored priya-s's rule as **#3** (user,
+   procedural, ingested, confirmed).
+2. `python eval/contradiction_test.py contradict` wrote a rule I made up, from the same
+   maintainer, that contradicts it ("For duplicates: label them `duplicate`, link the
+   original, and close them after 14 days if the reporter has not replied."). It was
+   stored the same way, but through `Store.supersede(3, ...)`. It became **#10** with
+   `supersedes: 3`, and #3 was marked inactive.
+3. `python eval/contradiction_test.py retrieve` asked for the active rule from a user
+   about duplicates, and only got back **[10]**.
+
+#3 is still in the store, just inactive, so there's a record of what was replaced. If
+the store only appended, the retrieve would have returned [3, 10], two rules that
+contradict each other. Running everything inside one session wouldn't have shown that,
+which is why I split it into three.
+
+**3. What my checkpoint cost.** I took the mean over **3 runs**
+(`planned-4202-s01-1b271f`, `planned-4203-s01-ac7f2a`, `planned-4204-s01-e4a85d`). None
+of them crashed, and each saved 5 or 6 checkpoints like every run does. The number is the
+total length of everything each run saved (`eval/checkpoint_bytes.py`):
+
+| | Bytes per run, mean of 3 |
+|---|---|
+| Structured checkpoint (`state/checkpoints.db`) | **24,204** |
+| The same checkpoints plus the conversation (`state/checkpoints_with_conversation.db`, written alongside them by `CONVERSATION_COPY`, never through the checkpointer) | **151,683** (6.3×) |
+
+The structured checkpoint isn't exactly small either. Every checkpoint carries all the
+calls completed so far, with up to 6,000 characters of each result, so any file text a
+run reads gets saved again in every checkpoint after that. Saving only what changed since
+the last checkpoint would cut this down. The conversation is bigger for a different
+reason. Every fill call re-sends everything the run has collected, so the messages get
+longer each turn (by the last checkpoint of the 4202 run it was 8 requests and about
+35,000 characters), and every checkpoint saves all of it again. A resume doesn't need any
+of it, though. It rebuilt every fill call from `completed_calls` and `findings`, and the
+resumes at steps 4 and 5 didn't make a single model call.
+
+**4. Is what I built durable execution? No, it's more of a recovery aid.** Here are
+slide 40's three questions, answered from my own runs:
+
+- **Does it notice when a run dies? No.** A `kill -9` leaves a trace with no `run_end`
+  and a checkpoint on disk, and nothing watches for either one. I found each crashed run
+  from the line it printed when it died.
+- **Does it restart the run without a person? No.** Every resume in Parts B and C (31 in
+  total, including the first matrix and the rerun of `during 5`) was a
+  `python run.py --resume <run_id>` that someone had to run. A script issued them, but I
+  started that script by hand, and nothing in RepoMind would have done it. The run also
+  doesn't carry its own environment, so whoever restarts it has to pass the same
+  `EMPTY_STORE` or `FACT` again.
+- **Does it stop finished work from being done twice? Yes, with some conditions.**
+  `completed_calls` in the checkpoint works like a journal. A finished step gets skipped
+  and its result reused, and no resumed run repeated a call that finished before its last
+  checkpoint ("Resume, not restart", 8/8). The call that was in flight is covered by its
+  derived key (Part B), and only by the key, since Part C had the same journal and still
+  doubled the comment. The journal is also only as up to date as the last checkpoint, so
+  any read that came back after it, or any model call made after it, runs again.
+
+That's one yes and two noes. What I would add:
+
+- **A supervisor.** This would be a lease (a heartbeat row in the checkpoint database for
+  each running `run_id`), plus a watcher that finds expired leases with no `run_end` and
+  resumes those runs with their own recorded switches and environment. There should also
+  be a limit on how many times a run can be resumed before it gets escalated to a person.
+- **A journal entry for every call, not just at checkpoints,** including the draft model
+  call, so a replay never has to ask the model again for something it already answered.
+
+**5. Which abstraction?** These are slide 43's four questions, in order, applied to
+RepoMind as it is now:
+
+1. **Do I know the steps and their order in advance? Yes,** so a **graph**. The planner
+   writes out the steps before the issue is read, and the executor runs only those steps,
+   in order. The revision after the first search is a conditional edge back to a repaired
+   step, not an open-ended loop.
+2. **Do runs outlive a single process? Yes,** so **save checkpoints to disk**. In Part B
+   I killed the process at every step and finished the run in a new one. Part D's runs
+   also depend on what earlier runs wrote, which needs a store next to the checkpointer.
+3. **Do steps have irreversible side effects? Yes,** so **a key on every write, plus
+   durable execution** if a half-finished run has to finish by itself. RepoMind already
+   has the keys. If a run gets killed after the PR but before the comment, a public PR
+   sits there with no triage comment until someone notices. So for this system the run
+   does need to finish on its own, which means it needs the durable execution layer it
+   doesn't have yet (see answer 4).
+4. **Do I want to write the loop and the compaction code myself? Yes,** so **write my
+   own harness**. Part F relies on context decisions that no SDK would make for me:
+   keeping the issue out of the compaction, keeping a maintainer's rule outside the
+   history, and putting the store's records after the run's own results with their
+   source shown.
+
+**The design this points to:** a graph of the plan's steps, sync checkpoints on disk
+before each write with a store next to them, derived keys on both writes, a durable
+execution runtime underneath (a supervisor and a per-call journal), and my own harness
+for the context.
+
+**What no framework decides for me (slide 44): what to checkpoint and where.** A
+framework that checkpoints after every node would save after the draft and before the
+PR. Mine has to save before each write *and include that write's arguments*, because the
+key is a hash of the arguments. If the arguments aren't on disk, a replay sends a new
+draft with a new key. That choice comes from how I derive my keys, and a framework has no
+way of knowing that.
 
 ## Part F · Find the boundary that lost it
 
