@@ -29,8 +29,10 @@ text and draft, stays in the run's checkpoint and dies with the run.
 - **What was stated rather than inferred:** a rule a person with standing (a
   maintainer) stated, word for word, with who stated it and when (candidate C, and
   Part F's maintainer note).
-- **What was confirmed:** the procedure is stored only as confirmed, and the run's
-  decision only once it is posted.
+- **What was confirmed:** the procedure is stored only once it has been checked
+  against the repository. The run's decision is stored only once it is posted, and
+  as `confirmed: false`: it is RepoMind's own conclusion, a lead for the next run to
+  check, not something a person has verified.
 
 Text from an issue (its body or its discussion) is never stored as a fact. If it is
 kept at all, it is kept as a record of **what the issue said** (episodic), unconfirmed.

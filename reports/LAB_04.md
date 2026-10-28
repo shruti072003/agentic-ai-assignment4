@@ -112,10 +112,50 @@ Three things to report:
 
 ## Part C · Break it on purpose
 
-| Step | When | run_id | Comments | Comment IDs | Open PRs |
-|---|---|---|---|---|---|
+`make reset` (Part B's tracker is archived in `tracker/archive/tracker-20261028-173410.db`),
+then the same ten cases with `KEY_MODE=uuid` on every crashed run. Each resume kept the
+run's own switches: every `resume` line records `key_mode: uuid`. The code and the
+checkpoints are the same as in Part B. Counts are read from the tracker by `run_id`.
 
-What the checkpoint did, and what the key did:
+| Step | When | run_id | Comments | Comment IDs | Open PRs | Matches its findings | What the call record and tracker show |
+|---|---|---|---|---|---|---|---|
+| 1 | after | `planned-4201-s01-c9e58d` | 1 | #1 | 1 | yes |  |
+| 1 | during | `planned-4201-s01-3e0a6e` | 1 | #2 | 1 | yes |  |
+| 2 | after | `planned-4201-s01-b21a5c` | 1 | #3 | 1 | yes |  |
+| 2 | during | `planned-4201-s01-ee981c` | 1 | #4 | 1 | yes |  |
+| 3 | after | `planned-4201-s01-c9e9dc` | 1 | #5 | 1 | yes |  |
+| 3 | during | `planned-4201-s01-f7cfbd` | 1 | #6 | 1 | yes |  |
+| 4 | after | `planned-4201-s01-4fff4a` | 1 | #7 | 1 | yes | the replayed PR carried a new key (`aaf2a41a…` against the first `7d49cf4c…`) and was found by its branch: `already there` |
+| 4 | during | `planned-4201-s01-fd0c3c` | 1 | #8 | 1 | yes | the PR committed during the kill; the replay, with a new key, was found by its branch: `already there` |
+| 5 | after | `planned-4201-s01-ae6b0a` | 2 | #9, #10 | 1 | no | the comment returned with key `7d32b5fc…`; the replay sent `52487cb8…`, which the check by key could not find |
+| 5 | during | `planned-4201-s01-5a6774` | 2 | #11, #12 | 1 | no | the comment committed during the kill with key `d045c8cb…`; the replay sent `d6a2a0d2…` |
+
+**Which N produce a second comment: N = 5, after and during, and only those.** The
+tracker holds comments #9 and #10 for `planned-4201-s01-ae6b0a`, with keys
+`7d32b5fceec548549a07b10a` and `52487cb872644b3cb2980b69`, and comments #11 and #12 for
+`planned-4201-s01-5a6774`, with keys `d045c8cbb20b40f7a376f7af` and
+`d6a2a0d2fdce48ab8daaf80d`. Same run, same body (`label: bug / file:
+src/notifications/templates.ts`), two keys. For N = 1 to 3 the comment had not been
+posted when the process died, so there was nothing to double. For N = 4 the PR had
+been opened, and the replay sent it with a new random key. The registry's check
+before `open_pr` reads by **branch**, not by key, so it found the open PR from
+`repomind/issue-4201` and wrote nothing. No case left a second PR, as expected.
+
+**What the checkpoint did, and what the key did.** The checkpoint did the same thing in
+Part C as in Part B. It decided where each replay started (the step after the last
+save) and how much ran again. Steps 1 to 4 were never called again after a step-5
+kill, and the comment was replayed with exactly the arguments saved before it, with
+no new model call. So the checkpoint bounded the replay window to the one running
+write, and it handed the replay the same body both times. That was not enough. With
+the same checkpoints, the same arguments, the same replay window and the same code, the
+tracker holds one comment per run in Part B and two per run at N = 5 here. The only
+thing that changed was the key. With a derived key the replayed comment carried
+`hash(run, step, arguments)`, the key the committed comment already had, so the check
+before the attempt found it. With a random key it carried a key the tracker had never
+seen, and nothing else in the system looks for an existing comment. The PR, the one
+write checked by something other than its key, did not double. The checkpoint narrows
+what replays, and only the key decides whether a replayed write writes again. That is
+slide 47's callout, "the key, not the checkpoint", measured on one run.
 
 ## Part D · A memory that can say where it came from
 
