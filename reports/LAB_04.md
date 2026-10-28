@@ -80,10 +80,35 @@ I think this is the worst case because the write definitely reached the tracker,
 
 I don't expect any crash to repeat a tool call that happened before the last checkpoint. After resuming, the trace should pick up at the step after the last checkpoint: step 2 for a step-2 crash, step 3 for step 3, step 4 for step 4, and step 5 for step 5.
 
-**The matrix, derived keys.** Uncrashed run:
+**The matrix, derived keys.**
+The uncrashed run was `planned-4201-s01-323f1d`, run right after `make reset`. The previous state is in `tracker/archive/tracker-20261028-171719.db`. The plan had five steps: read the issue, search, read a file, open the PR, and post the comment. So the matrix tests N = 1 through 5, both after and during each step.
 
-| Step | When | run_id | Comments | Open PRs | Matches its findings |
-|---|---|---|---|---|---|
+I got every count below directly from the tracker by `run_id`, using `Tracker().comments(run_id, 4201)` and `Tracker().prs(run_id, branch="repomind/issue-4201")`. These numbers aren't taken from the trace.
+
+| Step | When | run_id | Comments | Open PRs | Matches its findings | Last checkpoint before the kill | Calls after resume (plan steps) |
+|---|---|---|---|---|---|---|---|
+| 1 | after | `planned-4201-s01-baf218` | 1 (#2) | 1 | yes: bug, `src/notifications/templates.ts` | none | 1–5 (started over and re-planned) |
+| 1 | during | `planned-4201-s01-635019` | 1 (#3) | 1 | yes: bug, `src/notifications/templates.ts` | none | 1–5 (started over and re-planned) |
+| 2 | after | `planned-4201-s01-425fe9` | 1 (#4) | 1 | yes: bug, `src/notifications/templates.ts` | after 1 | 2–5 |
+| 2 | during | `planned-4201-s01-ed1927` | 1 (#5) | 1 | yes: bug, `src/notifications/templates.ts` | after 1 | 2–5 |
+| 3 | after | `planned-4201-s01-ef5bee` | 1 (#6) | 1 | yes: bug, `src/notifications/templates.ts` | after 2 | 3–5 |
+| 3 | during | `planned-4201-s01-7ff2e2` | 1 (#7) | 1 | yes: bug, `src/notifications/templates.ts` | after 2 | 3–5 |
+| 4 | after | `planned-4201-s01-e91efc` | 1 (#8) | 1 | yes: bug, `src/notifications/templates.ts` | before 4 (sync) | 4 (PR `already there`, same key), 5 |
+| 4 | during | `planned-4201-s01-7e6be3` | 1 (#9) | 1 | yes: bug, `src/notifications/templates.ts` | before 4 (sync) | 4 (PR `already there`, same key), 5 |
+| 5 | after | `planned-4201-s01-11a955` | 1 (#10) | 1 | yes: bug, `src/notifications/templates.ts` | before 5 (sync) | 5 (comment `already there`, same key) |
+| 5 | during | `planned-4201-s01-c23af6` | 1 (#12) | 1 | yes: bug, `src/notifications/templates.ts` | before 5 (sync) | 5 (comment `already there`, same key) |
+
+All 10 cases ended with exactly one triage comment and one open PR. Each comment also matched the findings from its own last checkpoint: `bug` and `src/notifications/templates.ts`, the same findings as the uncrashed run. No resumed run repeated a tool call that had completed before its last checkpoint (`make check-04`, "Resume, not restart", 8/8).
+
+The replayed writes are visible in the call records. After a step-4 kill, the PR attempt returned `already there` with the same key as the original attempt. After a step-5 kill, the comment did the same. In both step-4 cases and both step-5 cases, the resumed run made **no model call**. The saved arguments were enough.
+
+Three things to report:
+
+- **One crashed run had a different plan.** The first `during 5` case, `planned-4201-s01-a10b62`. Its first search used the issue's own wording and found no source file, then two revisions retried it (reset-password, reset_password, both 0 hits) and the second added another search step (localhost), so its plan grew to six steps. That meant step 5 was the **PR**, not the comment, and the kill happened as the PR committed. It still ended with one comment and one PR because the replay found the PR by its branch. I ran `during 5` again with `planned-4201-s01-c23af6`, which had the intended five-step plan, so the kill would land on the comment—the worst case from the hand walk. The checker uses this later run.
+
+- **I kept the first matrix too.** I ran the matrix once before, after the uncrashed run `planned-4201-s01-4c1244`, archived in `tracker/archive/tracker-20261028-171214.db`. That matrix also ended with one comment and one PR in every case. The problem was that 7 of its 11 runs posted comments containing `label: $fill / file: $fill`. The planner had put the comment arguments in as a template (`"label: $fill\nfile: $fill\n\n$fill"`), but the starter executor treated the template as already filled and posted it as-is. I fixed this in `ways/planned.py` with `unfilled()`, so any argument containing `$fill` gets filled, then ran `make reset` and reran the matrix above. The first matrix is still useful evidence: the drafts were wrong, but no crash caused a duplicate write. That protection comes from the key and the arguments saved in the checkpoint, not from the quality of the draft.
+
+- **A step-1 crash starts the run over.** A checkpoint isn't saved until step 1 returns, so a kill during or just after step 1 leaves no checkpoint. The run re-plans and executes every step again under the same `run_id`. Since nothing had been written yet, nothing was duplicated.
 
 ## Part C · Break it on purpose
 
